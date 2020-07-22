@@ -12,7 +12,6 @@ import (
 	"time"
 )
 
-var downChan chan int
 type DouyuGirlDao struct {
 	GirlId    int64  `json:"rid"`
 	NickName  string `json:"nn"`
@@ -40,8 +39,6 @@ const (
 
 func main()  {
 	//url := "https://rpic.douyucdn.cn/live-cover/roomCover/2018/10/28/0a539aaf2e6a086155cad8af9a40b80e_big.png/dy1"
-	downChan = make(chan int, 10)
-
 	var start, end int
 	fmt.Println("请输入爬取的起始页(>=1):")
 	fmt.Scan(&start)
@@ -88,15 +85,15 @@ func SpiderDouyuDB(idx int, page chan int)  {
 
 	fileNameRet := regexp.MustCompile(`([^/]*?).(jpg|png|jpeg|PNG|JPG|JPEG)`)
 
-
-
+	downChan := make(chan int)
 	for i, girl := range data.DataList.RecordList {
 		result := fileNameRet.FindAllString(girl.AvatarUrl, -1)
 		if len(result) > 0 {
 			girl.FileName = result[0]
 		}
-		fmt.Println(girl.FileName)
+		fmt.Println(girl.AvatarUrl)
 		saveDouyuGirl(idx, i, girl, downChan)
+		//fmt.Printf("第 %d 张图片下载完成\n", <- downChan)
 	}
 
 	page <- idx
@@ -159,22 +156,26 @@ func DouyuGet(url string) ([]byte, error)  {
 func saveDouyuGirl(idx int, index int, dao *DouyuGirlDao, task chan int) (bool, error)  {
 	fileDir := RESOURCES_DICTORY_URI + time.Now().Format("2006/01/02/") + strconv.Itoa(idx) + "/"
 	fileName := filepath.Join(fileDir, dao.FileName)
+
 	// 常见文件
 	err := os.MkdirAll(fileDir, os.ModePerm)
 	if err != nil {
 		LogError( dao.FileName + " os.MkdirAll:", err)
+		task <- index
 		return false, err
 	}
 
 	file, err := os.Create(fileName)
 	if err != nil {
 		LogError( dao.FileName + " os.Create:", err)
+		task <- index
 		return false, err
 	}
 	defer file.Close()
 	resp, err := http.Get(dao.AvatarUrl)
 	if err != nil {
 		LogError( fileName + " http.Get:", err)
+		task <- index
 		return false, err
 	}
 	defer resp.Body.Close()
@@ -191,7 +192,7 @@ func saveDouyuGirl(idx int, index int, dao *DouyuGirlDao, task chan int) (bool, 
 		}
 		file.Write(buf[:n])
 	}
-	//task <- index
+	task <- index
 	return true, nil
 }
 
